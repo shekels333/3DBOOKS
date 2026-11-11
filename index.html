@@ -169,7 +169,7 @@ const PAGES = [
     const g = c.getContext('2d'), gutterLeft = (i % 2 === 0), pg = PAGES[i];
     paper(g, gutterLeft, i + 11);
     if (!pg) return c;
-    const mIn = 130, mOut = 92, x0 = gutterLeft ? mIn : mOut, w = CW - mIn - mOut, cx = x0 + w/2;
+    const mIn = 158, mOut = 84, x0 = gutterLeft ? mIn : mOut, w = CW - mIn - mOut, cx = x0 + w/2;
     g.textBaseline = 'alphabetic';
     if (pg.title !== undefined){
       g.textAlign = 'center';
@@ -225,15 +225,65 @@ const PAGES = [
   function flushPages(){ texCache.forEach(function(t){ t.dispose(); }); texCache.clear(); refresh(); }
 
   function pageMat(){ return new THREE.MeshStandardMaterial({roughness:1, metalness:0, envMapIntensity:.25}); }
+  // Each half of the page block is a sheet-stack whose top surface curves down into the spine,
+  // so both halves meet in a valley at the binding line instead of ending in a square edge.
+  const NS = 26, DEN = 80, Q = G + WP + 0.004;
+  function newProfile(){ return {q:new Float32Array(NS+1), h:new Float32Array(NS+1), ang:new Float32Array(NS), len:Q}; }
+  const dq = new Float32Array(DEN+1), dh = new Float32Array(DEN+1), da = new Float32Array(DEN+1);
+  function profile(out, t, hv, cv){
+    const lam = 1.6*(t - hv) + 0.05;
+    for (let i=0;i<=DEN;i++){
+      const q = i/DEN*Q, u = Math.min(1, q/lam), c = hv + (t - hv)*(1 - (1-u)*(1-u));
+      dq[i] = q; dh[i] = t + (c - t)*cv;
+      da[i] = i ? da[i-1] + Math.hypot(dq[i]-dq[i-1], dh[i]-dh[i-1]) : 0;
+    }
+    const total = da[DEN]; let k = 0;
+    for (let j=0;j<=NS;j++){                          // resample evenly by arc length
+      const a = j/NS*total; while (k < DEN-1 && da[k+1] < a) k++;
+      const f = (a - da[k]) / Math.max(1e-9, da[k+1]-da[k]);
+      out.q[j] = dq[k] + (dq[k+1]-dq[k])*f; out.h[j] = dh[k] + (dh[k+1]-dh[k])*f;
+    }
+    for (let j=0;j<NS;j++) out.ang[j] = Math.atan2(out.h[j+1]-out.h[j], out.q[j+1]-out.q[j]);
+    out.len = total; return out;
+  }
+  edgeH.map.wrapS = THREE.RepeatWrapping;
+  [edgeV, edgeH].forEach(function(m){ m.side = THREE.DoubleSide; });
   function stack(inner, sign){        // sign +1: hangs under the front cover, -1: rests on the back cover
-    const box = new THREE.Mesh(new THREE.BoxGeometry(WP, PH, 1), [edgeV, dark, edgeH, edgeH, dark, dark]);
-    const top = new THREE.Mesh(new THREE.PlaneGeometry(WP, PH), pageMat());
-    box.position.set(XH + 0.004 + WP/2, PY0 + PH/2, 0); top.position.copy(box.position);
-    if (sign > 0) top.rotation.y = Math.PI;
-    inner.add(box, top);
-    return { box, top, sign, set(t){
-      box.visible = top.visible = t > 0.0005;
-      box.scale.z = Math.max(t, 0.0005); box.position.z = sign * (ZI - t/2); top.position.z = sign * (ZI - t - 0.0007);
+    const tg = new THREE.BufferGeometry(), tp = new Float32Array((NS+1)*6), tu = new Float32Array((NS+1)*4), ti = [];
+    for (let j=0;j<=NS;j++){
+      const u = sign < 0 ? j/NS : 1 - j/NS;
+      tu[j*4] = u; tu[j*4+1] = 0; tu[j*4+2] = u; tu[j*4+3] = 1;
+      if (j < NS){ const a=j*2, b=j*2+2, c=j*2+1, d=j*2+3; ti.push(a,b,c, b,d,c); }
+    }
+    tg.setAttribute('position', new THREE.BufferAttribute(tp,3)); tg.setAttribute('uv', new THREE.BufferAttribute(tu,2)); tg.setIndex(ti);
+    const mat = pageMat(); mat.side = THREE.DoubleSide;
+    const top = new THREE.Mesh(tg, mat); top.frustumCulled = false;
+    // edges: the two end strips (head and tail of the block) and the fore-edge face
+    const eg = new THREE.BufferGeometry(), nv = (NS+1)*4 + 4, ep2 = new Float32Array(nv*3), eu = new Float32Array(nv*2), ei = [];
+    for (let e=0;e<2;e++) for (let j=0;j<=NS;j++){
+      const o = (e*(NS+1) + j)*2;
+      eu[o*2] = j/NS*2.5; eu[o*2+1] = 0; eu[o*2+2] = j/NS*2.5; eu[o*2+3] = 1;
+      if (j < NS) ei.push(o, o+2, o+1, o+2, o+3, o+1);
+    }
+    const f0 = (NS+1)*4;
+    eu.set([0,0, 1,0, 0,1, 1,1], f0*2);
+    const nEnd = ei.length; ei.push(f0, f0+1, f0+2, f0+1, f0+3, f0+2);
+    eg.setAttribute('position', new THREE.BufferAttribute(ep2,3)); eg.setAttribute('uv', new THREE.BufferAttribute(eu,2)); eg.setIndex(ei);
+    eg.addGroup(0, nEnd, 0); eg.addGroup(nEnd, 6, 1);
+    const edges = new THREE.Mesh(eg, [edgeH, edgeV]); edges.frustumCulled = false;
+    inner.add(top, edges);
+    const X = q => XH - G + q, Z = h => sign < 0 ? -ZI + h : ZI - h;
+    return { top, sign, prof:newProfile(), set(pr){
+      for (let j=0;j<=NS;j++){
+        const x = X(pr.q[j]), z = Z(pr.h[j]), zb = Z(0), o = j*6;
+        tp[o]=x; tp[o+1]=PY0; tp[o+2]=z; tp[o+3]=x; tp[o+4]=PY1; tp[o+5]=z;
+        for (let e=0;e<2;e++){ const p = ((e*(NS+1) + j)*2)*3, y = e ? PY1 : PY0;
+          ep2[p]=x; ep2[p+1]=y; ep2[p+2]=zb; ep2[p+3]=x; ep2[p+4]=y; ep2[p+5]=z; }
+      }
+      const xf = X(pr.q[NS]), zt = Z(pr.h[NS]), zb = Z(0), p = f0*3;
+      ep2.set([xf,PY0,zb, xf,PY0,zt, xf,PY1,zb, xf,PY1,zt], p);
+      tg.attributes.position.needsUpdate = eg.attributes.position.needsUpdate = true;
+      tg.computeVertexNormals(); eg.computeVertexNormals();
     }};
   }
   const leftStack = stack(front.inner, 1), rightStack = stack(back.inner, -1);
@@ -256,15 +306,14 @@ const PAGES = [
     inner.add(m);
   }
   cap(front.inner, 1); cap(back.inner, -1);
-  const gutter = new THREE.Mesh(new THREE.BoxGeometry(X0 + 0.27, PH + 0.01, 0.07), dark);
+  const gutter = new THREE.Mesh(new THREE.BoxGeometry(X0 + 0.27, PH - 0.016, 0.07), dark);
   gutter.position.set((X0 - 0.27)/2, PY0 + PH/2, 0); M.add(gutter);
 
   // the turning leaf
-  const NS = 22, RW = WP + G;
   function leafGeo(verso){
     const g = new THREE.BufferGeometry(), pos = new Float32Array((NS+1)*2*3), uv = new Float32Array((NS+1)*2*2), idx = [];
     for (let j=0;j<=NS;j++){
-      const r = j/NS*RW, u0 = Math.max(0, (r - G)/WP), u = verso ? 1 - u0 : u0;
+      const u = verso ? 1 - j/NS : j/NS;
       uv[j*4] = u; uv[j*4+1] = 0; uv[j*4+2] = u; uv[j*4+3] = 1;
       if (j < NS){ const a=j*2, b=j*2+2, c=j*2+1, d=j*2+3; idx.push(a,b,c, b,d,c); }
     }
@@ -275,21 +324,21 @@ const PAGES = [
   leafB.material.side = THREE.BackSide;
   leafF.frustumCulled = leafB.frustumCulled = false; leafF.visible = leafB.visible = false;
   M.add(leafF, leafB);
-  function poseLeaf(p, hx){
-    const e = p*p*(3-2*p), A = Math.PI*e, c = 0.95*Math.sin(Math.PI*e);
-    let x = hx, z = 0;
-    [leafF, leafB].forEach(function(m){ m.userData.pos = m.geometry.attributes.position; });
-    const pf = leafF.userData.pos.array, pb = leafB.userData.pos.array;
+  function poseLeaf(p, pr, pl, hv){
+    const e = p*p*(3-2*p), c = 0.95*Math.sin(Math.PI*e), seg = (pr.len + (pl.len - pr.len)*e)/NS;
+    let x = X0 + hv + 0.0014, z = 0;
+    const pf = leafF.geometry.attributes.position.array, pb = leafB.geometry.attributes.position.array;
     for (let j=0;j<=NS;j++){
       if (j > 0){
-        const r = (j-0.5)/NS, a = Math.max(0, Math.min(Math.PI, A + c*(0.5 - r)));
-        x += Math.sin(a)*RW/NS; z -= Math.cos(a)*RW/NS;
+        const k = j-1, aR = pr.ang[k], aL = Math.PI - pl.ang[k];
+        const a = Math.max(0, Math.min(Math.PI, aR + (aL - aR)*e + c*(0.5 - (j-0.5)/NS)));
+        x += Math.sin(a)*seg; z -= Math.cos(a)*seg;
       }
       const o = j*6;
       pf[o]=pb[o]=x; pf[o+1]=pb[o+1]=PY0; pf[o+2]=pb[o+2]=z;
       pf[o+3]=pb[o+3]=x; pf[o+4]=pb[o+4]=PY1; pf[o+5]=pb[o+5]=z;
     }
-    [leafF, leafB].forEach(function(m){ m.userData.pos.needsUpdate = true; m.geometry.computeVertexNormals(); });
+    [leafF, leafB].forEach(function(m){ m.geometry.attributes.position.needsUpdate = true; m.geometry.computeVertexNormals(); });
   }
 
   // ---------- reading state ----------
@@ -305,11 +354,14 @@ const PAGES = [
     if (f){ setMap(leafF.material, pageTex(2*nl)); setMap(leafB.material, pageTex(2*nl + 1)); }
     leafF.visible = leafB.visible = !!f;
   }
-  function layout(){
+  let lastKey = '';
+  function layout(cv){
     const pos = flip ? (flip.dir > 0 ? turned + flip.p : turned - 1 + flip.p) : turned;
-    const tl = thickL(pos), tr = TP - tl;
-    leftStack.set(tl); rightStack.set(tr);
-    if (flip) poseLeaf(flip.p, X0 + tr + (tl - tr) * flip.p + 0.0015);
+    const key = pos.toFixed(4) + '|' + cv.toFixed(4) + '|' + (flip ? flip.p.toFixed(4) : '');
+    if (key === lastKey) return; lastKey = key;
+    const tl = thickL(pos), tr = TP - tl, hv = Math.min(0.018, 0.7*Math.min(tl, tr));
+    leftStack.set(profile(leftStack.prof, tl, hv, cv)); rightStack.set(profile(rightStack.prof, tr, hv, cv));
+    if (flip) poseLeaf(flip.p, rightStack.prof, leftStack.prof, hv);
   }
   function next(){ if (mode !== 'read' || flip) return; if (turned < LEAVES){ flip = {dir:1, p:0}; refresh(); } }
   function prev(){ if (mode !== 'read' || flip) return; if (turned > 0){ flip = {dir:-1, p:1}; refresh(); } else closeBook(); }
@@ -540,7 +592,7 @@ const PAGES = [
       flip.p += flip.dir * dt / 0.95;
       if (flip.p >= 1 || flip.p <= 0){ turned += flip.dir; flip = null; refresh(); }
     }
-    layout();
+    layout(cv);
 
     // view
     if (mode === 'show'){
