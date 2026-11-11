@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>shekel tome</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=UnifrakturCook:wght@700&display=swap">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23140c08'/%3E%3Cpath d='M8 7h16v4H12v3h8v4h-8v7H8z' fill='%23e8a050'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&display=swap">
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden}
   canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
@@ -33,7 +34,7 @@
 <div id="load"><span>loading</span><i><b id="bar"></b></i></div>
 <div id="hint" class="off"></div>
 <button id="close" type="button">close</button>
-<span class="fontwarm" style="font-family:'IM Fell English'">a<i>a</i></span><span class="fontwarm" style="font-family:'UnifrakturCook';font-weight:700">a</span>
+<span class="fontwarm" style="font-family:'IM Fell English'">a<i>a</i></span>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -94,7 +95,7 @@ const PAGES = [
   const ZI = 0.108;                  // inner face of each cover board
   const X0 = -0.20;                  // plane the inner faces lie on when open
   const G  = 0.012;                  // half-width of the gutter when open
-  const WP = 0.68, PY0 = 0.014, PY1 = 0.961, PH = PY1 - PY0;   // page size
+  const WP = 0.656, PY0 = 0.020, PY1 = 0.954, PH = PY1 - PY0;   // page size, kept inside the cover lip
   const TP = ZI * 2;                 // thickness of the whole page block
   const LEAVES = Math.max(1, Math.ceil(PAGES.length / 2));
 
@@ -111,29 +112,42 @@ const PAGES = [
   const latch = pivot(back.inner, 0.392, -0.112);
 
   // ---------- paper ----------
-  function edgeTex(vertical){
-    const c = document.createElement('canvas'); c.width = c.height = 256;
+  // Leaf edges: cream stock with thin separated lines. The old texture painted a
+  // full-bleed stripe on every row, which read as cut timber.
+  function edgeTex(){
+    const W = 128, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H;
     const g = c.getContext('2d');
-    g.fillStyle = '#8b744c'; g.fillRect(0,0,256,256);
-    for (let i=0;i<256;i++){
-      const v = 70 + Math.random()*95;
-      g.fillStyle = 'rgba('+(v+50|0)+','+(v+26|0)+','+(v-12|0)+','+(0.3+Math.random()*0.5)+')';
-      if (vertical) g.fillRect(i,0,1,256); else g.fillRect(0,i,256,1);
+    let s = 11;
+    const R = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+    g.fillStyle = '#f1e4c8'; g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 1800; i++){
+      const v = 170 + R() * 60;
+      g.fillStyle = 'rgba(' + (v|0) + ',' + ((v - 22)|0) + ',' + ((v - 52)|0) + ',' + (0.025 + R() * 0.05) + ')';
+      g.fillRect(R() * W, R() * H, 1, 1 + R() * 2);
     }
-    for (let i=0;i<50;i++){
-      g.fillStyle = 'rgba(30,18,8,'+(Math.random()*0.16)+')';
-      const s = 10+Math.random()*50;
-      g.beginPath(); g.ellipse(Math.random()*256,Math.random()*256,vertical?s*.3:s,vertical?s:s*.3,0,0,7); g.fill();
+    let y = 2, n = 0;
+    while (y < H){
+      y += 4.2 + R() * 3.2; n++;
+      const band = n % 12 === 0;
+      g.strokeStyle = band ? 'rgba(78,50,26,0.85)' : 'rgba(112,74,40,' + (0.5 + R() * 0.32) + ')';
+      g.lineWidth = band ? 1.7 : 0.7 + R() * 0.55;
+      g.beginPath();
+      const w = (R() - 0.5) * 0.8;
+      g.moveTo(0, y + w); g.lineTo(W, y - w); g.stroke();
     }
-    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+    const t = new THREE.CanvasTexture(c);
+    t.encoding = THREE.sRGBEncoding;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = ANISO;
+    return t;
   }
-  const edgeV = new THREE.MeshStandardMaterial({map:edgeTex(true),  roughness:.95, envMapIntensity:.3});
-  const edgeH = new THREE.MeshStandardMaterial({map:edgeTex(false), roughness:.95, envMapIntensity:.3});
+  const edgeMat = new THREE.MeshStandardMaterial({map:edgeTex(), roughness:.98, metalness:0, envMapIntensity:.08});
+  edgeMat.side = THREE.DoubleSide;
   const dark  = new THREE.MeshStandardMaterial({color:0x0c0704, roughness:.95, envMapIntensity:.2});
 
   const CW = 900, CH = Math.round(CW * PH / WP);
   const BODY = "'IM Fell English', Georgia, 'Times New Roman', serif";
-  const HEAD = "'UnifrakturCook', 'IM Fell English', Georgia, serif";
+  const HEAD = BODY;
   function rnd(seed){ let s = seed*9301+49297; return function(){ s = (s*9301+49297)%233280; return s/233280; }; }
 
   function paper(g, gutterLeft, seed){
@@ -164,6 +178,29 @@ const PAGES = [
     if (line) out.push(line);
     return out;
   }
+  // Cover rune, drawn rather than typed. Neither face we load contains U+20AA,
+  // and a system fallback does not match the squared spiral on the boards.
+  function drawShekel(g, cx, cy, size){
+    const w = size * 0.20;
+    g.save();
+    g.translate(cx, cy);
+    g.strokeStyle = g.fillStyle;
+    g.lineWidth = w;
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+    g.beginPath();
+    const s = size * 0.5;
+    const l = -s * 0.78, r = s * 0.78, m = s * 0.02;
+    const top = -s * 0.76, bot = s * 0.84, neck = -s * 0.08;
+    g.moveTo(l, bot);
+    g.lineTo(l, top);
+    g.lineTo(r, top);
+    g.lineTo(r, bot);
+    g.lineTo(m, bot);
+    g.lineTo(m, neck);
+    g.stroke();
+    g.restore();
+  }
   function drawPage(i){
     const c = document.createElement('canvas'); c.width = CW; c.height = CH;
     const g = c.getContext('2d'), gutterLeft = (i % 2 === 0), pg = PAGES[i];
@@ -173,8 +210,8 @@ const PAGES = [
     g.textBaseline = 'alphabetic';
     if (pg.title !== undefined){
       g.textAlign = 'center';
-      g.fillStyle = '#6b1410'; g.font = "300px " + BODY; g.fillText('₪', cx, CH*0.40);
-      g.fillStyle = '#2b1a0e'; g.font = "700 118px " + HEAD; g.fillText(pg.title, cx, CH*0.60);
+      g.fillStyle = '#6b1410'; drawShekel(g, cx, CH*0.33, CH*0.24);
+      g.fillStyle = '#2b1a0e'; g.font = "124px " + HEAD; g.fillText(pg.title, cx, CH*0.58);
       g.strokeStyle = 'rgba(60,35,15,.6)'; g.lineWidth = 2;
       g.beginPath(); g.moveTo(cx-150, CH*0.645); g.lineTo(cx+150, CH*0.645); g.stroke();
       if (pg.sub){ g.font = "italic 40px " + BODY; g.fillStyle = '#4a321c'; g.fillText(pg.sub, cx, CH*0.70); }
@@ -182,9 +219,10 @@ const PAGES = [
     }
     let y = 170;
     if (pg.head){
-      g.textAlign = 'center'; g.fillStyle = '#6b1410'; g.font = "700 66px " + HEAD;
+      g.textAlign = 'center'; g.fillStyle = '#6b1410'; g.font = "64px " + HEAD;
       g.fillText(pg.head, cx, y); y += 34;
-      g.fillStyle = 'rgba(107,20,16,.75)'; g.font = "26px " + BODY; g.fillText('•  ₪  •', cx, y + 18); y += 92;
+      g.fillStyle = 'rgba(107,20,16,.75)'; g.font = "26px " + BODY;
+      g.fillText('•', cx - 34, y + 18); drawShekel(g, cx, y + 8, 26); g.fillText('•', cx + 34, y + 18); y += 92;
     }
     const FS = 40, LH = 58;
     g.textAlign = 'left';
@@ -192,7 +230,7 @@ const PAGES = [
       par = par.trim(); if (!par) return;
       let capW = 0, rest = par;
       if (pi === 0 && pg.head){
-        g.font = "700 112px " + HEAD; g.fillStyle = '#6b1410';
+        g.font = "112px " + HEAD; g.fillStyle = '#6b1410';
         const ch = par.charAt(0); capW = g.measureText(ch).width + 14;
         g.fillText(ch, x0 - 4, y + LH + 6); rest = par.slice(1);
       }
@@ -246,8 +284,12 @@ const PAGES = [
     for (let j=0;j<NS;j++) out.ang[j] = Math.atan2(out.h[j+1]-out.h[j], out.q[j+1]-out.q[j]);
     out.len = total; return out;
   }
-  edgeH.map.wrapS = THREE.RepeatWrapping;
-  [edgeV, edgeH].forEach(function(m){ m.side = THREE.DoubleSide; });
+  // How far the page edges reach past the hinge plane toward each cover board.
+  // The boards' inner panel sits near z=0.126; the rim dips in to 0.108, so the
+  // reach eases off at the corners and the fore-edge stays inside that lip.
+  const NY = 10, TUCK = 0.026, VSCALE = 3.1;
+  // Constant reach. Easing it off at the corners reopened a dark slot under the brass.
+  function tuckOf(){ return TUCK; }
   function stack(inner, sign){        // sign +1: hangs under the front cover, -1: rests on the back cover
     const tg = new THREE.BufferGeometry(), tp = new Float32Array((NS+1)*6), tu = new Float32Array((NS+1)*4), ti = [];
     for (let j=0;j<=NS;j++){
@@ -258,31 +300,40 @@ const PAGES = [
     tg.setAttribute('position', new THREE.BufferAttribute(tp,3)); tg.setAttribute('uv', new THREE.BufferAttribute(tu,2)); tg.setIndex(ti);
     const mat = pageMat(); mat.side = THREE.DoubleSide;
     const top = new THREE.Mesh(tg, mat); top.frustumCulled = false;
-    // edges: the two end strips (head and tail of the block) and the fore-edge face
-    const eg = new THREE.BufferGeometry(), nv = (NS+1)*4 + 4, ep2 = new Float32Array(nv*3), eu = new Float32Array(nv*2), ei = [];
-    for (let e=0;e<2;e++) for (let j=0;j<=NS;j++){
+    // edges: head, tail, and a subdivided fore-edge. Cover-side verts are written in set().
+    const f0 = (NS+1)*4, nv = f0 + (NY+1)*2;
+    const eg = new THREE.BufferGeometry(), ep2 = new Float32Array(nv*3), eu = new Float32Array(nv*2), ei = [];
+    for (let e=0;e<2;e++) for (let j=0;j<NS;j++){
       const o = (e*(NS+1) + j)*2;
-      eu[o*2] = j/NS*2.5; eu[o*2+1] = 0; eu[o*2+2] = j/NS*2.5; eu[o*2+3] = 1;
-      if (j < NS) ei.push(o, o+2, o+1, o+2, o+3, o+1);
+      ei.push(o, o+2, o+1, o+2, o+3, o+1);
     }
-    const f0 = (NS+1)*4;
-    eu.set([0,0, 1,0, 0,1, 1,1], f0*2);
-    const nEnd = ei.length; ei.push(f0, f0+1, f0+2, f0+1, f0+3, f0+2);
+    for (let k=0;k<NY;k++){
+      const o = f0 + k*2;
+      ei.push(o, o+2, o+1, o+2, o+3, o+1);
+    }
     eg.setAttribute('position', new THREE.BufferAttribute(ep2,3)); eg.setAttribute('uv', new THREE.BufferAttribute(eu,2)); eg.setIndex(ei);
-    eg.addGroup(0, nEnd, 0); eg.addGroup(nEnd, 6, 1);
-    const edges = new THREE.Mesh(eg, [edgeH, edgeV]); edges.frustumCulled = false;
+    const edges = new THREE.Mesh(eg, edgeMat); edges.frustumCulled = false;
     inner.add(top, edges);
     const X = q => XH - G + q, Z = h => sign < 0 ? -ZI + h : ZI - h;
+    const zCover = tuck => sign < 0 ? -(ZI + tuck) : (ZI + tuck);
     return { top, sign, prof:newProfile(), set(pr){
       for (let j=0;j<=NS;j++){
-        const x = X(pr.q[j]), z = Z(pr.h[j]), zb = Z(0), o = j*6;
+        const u = j/NS, x = X(pr.q[j]), z = Z(pr.h[j]), tuck = tuckOf(u), zb = zCover(tuck), o = j*6;
         tp[o]=x; tp[o+1]=PY0; tp[o+2]=z; tp[o+3]=x; tp[o+4]=PY1; tp[o+5]=z;
-        for (let e=0;e<2;e++){ const p = ((e*(NS+1) + j)*2)*3, y = e ? PY1 : PY0;
-          ep2[p]=x; ep2[p+1]=y; ep2[p+2]=zb; ep2[p+3]=x; ep2[p+4]=y; ep2[p+5]=z; }
+        for (let e=0;e<2;e++){
+          const vi = (e*(NS+1) + j)*2, p = vi*3, y = e ? PY1 : PY0;
+          ep2[p]=x; ep2[p+1]=y; ep2[p+2]=zb; ep2[p+3]=x; ep2[p+4]=y; ep2[p+5]=z;
+          eu[vi*2]=u*1.6; eu[vi*2+1]=0; eu[vi*2+2]=u*1.6; eu[vi*2+3]=(pr.h[j]+tuck)*VSCALE;
+        }
       }
-      const xf = X(pr.q[NS]), zt = Z(pr.h[NS]), zb = Z(0), p = f0*3;
-      ep2.set([xf,PY0,zb, xf,PY0,zt, xf,PY1,zb, xf,PY1,zt], p);
-      tg.attributes.position.needsUpdate = eg.attributes.position.needsUpdate = true;
+      const xf = X(pr.q[NS]), zt = Z(pr.h[NS]);
+      for (let k=0;k<=NY;k++){
+        const v = k/NY, y = PY0 + PH*v, tuck = tuckOf(v), zb = zCover(tuck);
+        const vi = f0 + k*2, p = vi*3;
+        ep2[p]=xf; ep2[p+1]=y; ep2[p+2]=zb; ep2[p+3]=xf; ep2[p+4]=y; ep2[p+5]=zt;
+        eu[vi*2]=v*2.2; eu[vi*2+1]=0; eu[vi*2+2]=v*2.2; eu[vi*2+3]=(pr.h[NS]+tuck)*VSCALE;
+      }
+      tg.attributes.position.needsUpdate = eg.attributes.position.needsUpdate = eg.attributes.uv.needsUpdate = true;
       tg.computeVertexNormals(); eg.computeVertexNormals();
     }};
   }
@@ -368,6 +419,7 @@ const PAGES = [
 
   // ---------- load the sculpted parts ----------
   const glowMats = new Set();
+  let claspBack = null, claspHome = null;
   const loadEl = document.getElementById('load'), barEl = document.getElementById('bar');
   let ready = false;
   function onModel(gltf){
@@ -375,6 +427,7 @@ const PAGES = [
     rootNode.children.slice().forEach(function(o){
       const n = o.name;
       if (n === 'latch') latch.inner.add(o);
+      else if (n === 'clasp_back') { claspBack = o; claspHome = o.position.clone(); back.inner.add(o); }
       else if (n === 'cover_front' || n.indexOf('f_') === 0) front.inner.add(o);
       else if (n === 'spine') M.add(o);
       else back.inner.add(o);
@@ -566,7 +619,7 @@ const PAGES = [
 
   if (document.fonts && document.fonts.load){
     Promise.all([document.fonts.load("37px 'IM Fell English'"), document.fonts.load("italic 37px 'IM Fell English'"),
-                 document.fonts.load("700 66px 'UnifrakturCook'")]).then(flushPages, function(){});
+                 document.fonts.load("124px 'IM Fell English'")]).then(flushPages, function(){});
   }
 
   // ---------- loop ----------
@@ -582,8 +635,16 @@ const PAGES = [
       if (openT === 1){ mode = 'read'; closeBtn.classList.add('on'); setHint('click a page to turn · esc to close'); } }
     if (mode === 'closing'){ openT = Math.max(0, openT - dt/2.2);
       if (openT === 0){ mode = 'show'; idle = 99; zoomRead = 1; } }
-    const la = sm(0, 0.34, openT), cv = sm(0.2, 1, openT);
-    latch.p.rotation.y = la * 1.95;
+    const la = sm(0, 0.62, openT), cv = sm(0.2, 1, openT);
+    // Swing the clasp out past the fore-edge and on around until it lies behind the back board.
+    latch.p.rotation.y = la * Math.PI * 1.5;
+    const tuckL = sm(0.42, 1, la);
+    latch.p.position.set(0.392 - tuckL * 0.05, 0, -0.112 - tuckL * 0.07);
+    if (claspBack){
+      const c = sm(0.2, 0.75, openT);
+      claspBack.position.x = claspHome.x - c * 0.07;
+      claspBack.position.z = claspHome.z - c * 0.025;
+    }
     front.p.rotation.y = -cv * Math.PI/2; front.p.position.set(XH + (X0-XH)*cv, 0,  ZI + (G-ZI)*cv);
     back.p.rotation.y  =  cv * Math.PI/2; back.p.position.set(XH + (X0-XH)*cv, 0, -ZI - (G-ZI)*cv);
 
