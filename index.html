@@ -178,27 +178,67 @@ const PAGES = [
     if (line) out.push(line);
     return out;
   }
-  // Cover rune, drawn rather than typed. Neither face we load contains U+20AA,
-  // and a system fallback does not match the squared spiral on the boards.
+  // In-book shekel sign (U+20AA). IM Fell has no shekel, and fillText would
+  // fall back to whatever face the machine has, so the mark is drawn. The
+  // form follows the typographic sign: open at the bottom left, a left stem,
+  // a bar that turns down and stops, an inner stem, and a right stem that
+  // hooks under. The cover rune is a separate mark and is not drawn here.
   function drawShekel(g, cx, cy, size){
-    const w = size * 0.20;
+    const aspect = 1.13;
+    const X = function(nx){ return (nx - 0.5) * size * aspect; };
+    const Y = function(ny){ return (ny - 0.5) * size; };
+    function poly(cmds){
+      g.beginPath();
+      cmds.forEach(function(c){
+        if (c[0] === 'M') g.moveTo(X(c[1]), Y(c[2]));
+        else if (c[0] === 'L') g.lineTo(X(c[1]), Y(c[2]));
+        else g.quadraticCurveTo(X(c[1]), Y(c[2]), X(c[3]), Y(c[4]));
+      });
+      g.closePath();
+      g.fill();
+    }
     g.save();
     g.translate(cx, cy);
-    g.strokeStyle = g.fillStyle;
-    g.lineWidth = w;
-    g.lineJoin = 'round';
-    g.lineCap = 'round';
-    g.beginPath();
-    const s = size * 0.5;
-    const l = -s * 0.78, r = s * 0.78, m = s * 0.02;
-    const top = -s * 0.76, bot = s * 0.84, neck = -s * 0.08;
-    g.moveTo(l, bot);
-    g.lineTo(l, top);
-    g.lineTo(r, top);
-    g.lineTo(r, bot);
-    g.lineTo(m, bot);
-    g.lineTo(m, neck);
-    g.stroke();
+    // Left stem and the bar that curls down into a short hanging stroke.
+    poly([
+      ['M', -0.036, 1.000],
+      ['Q', 0.000, 1.000, 0.000, 0.915],
+      ['L', 0.000, 0.062],
+      ['Q', -0.010, 0.018, -0.038, -0.006],
+      ['L', 0.016, -0.016],
+      ['Q', 0.058, -0.016, 0.100, 0.000],
+      ['L', 0.385, 0.000],
+      ['Q', 0.562, 0.000, 0.6375, 0.0875],
+      ['Q', 0.713, 0.175, 0.713, 0.374],
+      ['L', 0.713, 0.608],
+      ['Q', 0.722, 0.652, 0.736, 0.672],
+      ['L', 0.552, 0.672],
+      ['Q', 0.560, 0.652, 0.574, 0.612],
+      ['Q', 0.574, 0.237, 0.5335, 0.160],
+      ['Q', 0.493, 0.083, 0.374, 0.083],
+      ['L', 0.139, 0.083],
+      ['L', 0.139, 0.915],
+      ['Q', 0.139, 1.000, 0.188, 1.000]
+    ]);
+    // Inner stem, joined along the bottom to the right stem's hook.
+    poly([
+      ['M', 0.287, 1.000],
+      ['L', 0.287, 0.395],
+      ['Q', 0.282, 0.348, 0.255, 0.338],
+      ['L', 0.458, 0.338],
+      ['Q', 0.430, 0.350, 0.426, 0.395],
+      ['L', 0.426, 0.917],
+      ['L', 0.663, 0.917],
+      ['Q', 0.781, 0.917, 0.821, 0.839],
+      ['Q', 0.861, 0.761, 0.861, 0.604],
+      ['L', 0.861, 0.040],
+      ['Q', 0.855, 0.000, 0.830, -0.012],
+      ['L', 1.040, -0.012],
+      ['Q', 1.012, 0.000, 1.000, 0.045],
+      ['L', 1.000, 0.626],
+      ['Q', 1.000, 0.825, 0.924, 0.9125],
+      ['Q', 0.848, 1.000, 0.672, 1.000]
+    ]);
     g.restore();
   }
   function drawPage(i){
